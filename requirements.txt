@@ -1,0 +1,13 @@
+cffi==2.0.0
+colorama==0.4.6
+numpy==2.4.0
+pycparser==2.23
+pynput==1.8.1
+pyobjc-core==12.1
+pyobjc-framework-ApplicationServices==12.1
+pyobjc-framework-Cocoa==12.1
+pyobjc-framework-CoreText==12.1
+pyobjc-framework-Quartz==12.1
+PyYAML==6.0.3
+six==1.17.0
+sounddevice==0.5.3

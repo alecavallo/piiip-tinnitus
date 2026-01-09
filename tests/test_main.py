@@ -163,16 +163,22 @@ class TestOscillator:
 
         assert outdata.shape == (frames, 1)
 
-    def test_callback_prints_status_on_error(self):
-        """Test callback prints status to stderr when there's an error."""
+    def test_callback_handles_status_without_crash(self):
+        """Test callback handles status parameter gracefully without I/O.
+
+        Note: We intentionally don't print status in the callback to avoid
+        I/O in the real-time audio thread. This test verifies the callback
+        doesn't crash when a status is passed.
+        """
         osc = Oscillator()
         osc.is_playing = True
         frames = 1024
         outdata = np.zeros((frames, 1), dtype=np.float32)
 
-        with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-            osc.callback(outdata, frames, None, "underflow")
-            assert "underflow" in mock_stderr.getvalue()
+        # Callback should handle status gracefully without crashing
+        osc.callback(outdata, frames, None, "underflow")
+        # Verify audio was still generated
+        assert not np.all(outdata == 0)
 
     def test_thread_safety_frequency(self):
         """Test set_frequency is thread-safe (uses lock)."""
@@ -580,10 +586,11 @@ class TestInputHandler:
             assert state["running"] == original_running
         finally:
             main.osc = original_osc
-        state["step"] = 100
-        state["base_freq"] = 0
-        state["octave_option"] = 0
-        state["final_freq"] = 0
+            # Reset state for test isolation
+            state["step"] = 100
+            state["base_freq"] = 0
+            state["octave_option"] = 0
+            state["final_freq"] = 0
 
     def test_on_press_esc_stops_running(self):
         """Test ESC key stops the application."""

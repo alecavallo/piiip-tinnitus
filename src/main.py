@@ -56,8 +56,10 @@ class Oscillator:
         self._is_fading = False  # True while fade is in progress
 
     def callback(self, outdata, frames, _time, status):
-        if status:
-            print(status, file=sys.stderr)
+        # Note: We intentionally don't log status here to avoid I/O in the
+        # real-time audio callback thread. Status errors (e.g., buffer underruns)
+        # are typically transient and handled by sounddevice internally.
+        _ = status  # Acknowledge parameter to satisfy linters
 
         with self.lock:
             # Update target gain based on playing state
@@ -190,6 +192,17 @@ class ThreadSafeDict(dict):
         super().__init__(*args, **kwargs)
         self._lock = threading.Lock()
 
+    def __eq__(self, other):
+        """Compare dictionaries, ignoring the lock attribute."""
+        if isinstance(other, dict):
+            with self._lock:
+                return dict.__eq__(self, other)
+        return NotImplemented
+
+    def __hash__(self):
+        """ThreadSafeDict is not hashable (mutable container)."""
+        raise TypeError("unhashable type: 'ThreadSafeDict'")
+
     def __getitem__(self, key):
         with self._lock:
             return super().__getitem__(key)
@@ -222,9 +235,15 @@ state = ThreadSafeDict(
 # --- CAMILLA DSP YAML GENERATORS ---
 
 
-def generate_notch_yaml(freq):
+def generate_notch_yaml(freq: float) -> str:
     """
     Generates the therapeutic filter: Removes the tinnitus frequency.
+
+    Args:
+        freq: Target frequency in Hz to remove.
+
+    Returns:
+        YAML configuration string for CamillaDSP notch filter.
     """
     return f"""
 # Tinnitus NOTCH Filter (Therapeutic)
@@ -252,10 +271,17 @@ pipeline:
 """
 
 
-def generate_simulator_yaml(freq):
+def generate_simulator_yaml(freq: float) -> str:
     """
     Generates the simulator filter: Exaggerates the tinnitus frequency.
+
     Uses a Peaking filter with high positive gain.
+
+    Args:
+        freq: Target frequency in Hz to boost.
+
+    Returns:
+        YAML configuration string for CamillaDSP peaking filter.
     """
     return f"""
 # Tinnitus SIMULATOR (Empathy)
@@ -471,15 +497,29 @@ def main():
 
         # Generate Notch (Therapy)
         notch_file = "camilla_notch_therapy.yml"
-        with open(notch_file, "w", encoding="utf-8") as f:
-            f.write(generate_notch_yaml(final_f))
-        print(f"1. Therapeutic filter saved to: {Fore.YELLOW}{notch_file}")
+        try:
+            with open(notch_file, "w", encoding="utf-8") as f:
+                f.write(generate_notch_yaml(final_f))
+            print(f"1. Therapeutic filter saved to: {Fore.YELLOW}{notch_file}")
+        except OSError as e:
+            print(
+                f"{Fore.RED}Error: Could not write therapeutic filter "
+                f"'{notch_file}': {e}",
+                file=sys.stderr,
+            )
 
         # Generate Simulator (Empathy)
         sim_file = "camilla_simulator.yml"
-        with open(sim_file, "w", encoding="utf-8") as f:
-            f.write(generate_simulator_yaml(final_f))
-        print(f"2. Tinnitus simulator saved to: {Fore.YELLOW}{sim_file}")
+        try:
+            with open(sim_file, "w", encoding="utf-8") as f:
+                f.write(generate_simulator_yaml(final_f))
+            print(f"2. Tinnitus simulator saved to: {Fore.YELLOW}{sim_file}")
+        except OSError as e:
+            print(
+                f"{Fore.RED}Error: Could not write simulator file "
+                f"'{sim_file}': {e}",
+                file=sys.stderr,
+            )
 
         print(f"\n{Fore.CYAN}Copy these files to your CamillaDSP configuration folder.")
 

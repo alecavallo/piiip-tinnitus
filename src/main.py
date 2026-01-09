@@ -34,8 +34,14 @@ BLOCK_SIZE = 1024
 
 class Oscillator:
     """
-    Sine wave generator with phase continuity.
+    Sine wave generator with phase continuity and fade envelopes.
+
+    Implements smooth fade-in/fade-out to prevent clicks and pops,
+    as required for hearing safety.
     """
+
+    # Fade duration in milliseconds (10ms is typically inaudible)
+    FADE_DURATION_MS = 10.0
 
     def __init__(self, initial_frequency: float = 1000.0):
         self.frequency = max(20, min(20000, initial_frequency))
@@ -44,22 +50,67 @@ class Oscillator:
         self.is_playing = False
         self.lock = threading.Lock()
 
+        # Fade envelope state
+        self._fade_samples = int(SAMPLE_RATE * self.FADE_DURATION_MS / 1000.0)
+        self._current_gain = 0.0  # Current envelope gain (0.0 to 1.0)
+        self._target_gain = 0.0  # Target envelope gain
+        self._is_fading = False  # True while fade is in progress
+
     def callback(self, outdata, frames, _time, status):
         if status:
             print(status, file=sys.stderr)
 
         with self.lock:
-            if not self.is_playing:
+            # Update target gain based on playing state
+            self._target_gain = 1.0 if self.is_playing else 0.0
+
+            # Check if we need to generate audio (playing or fading out)
+            if self._current_gain == 0.0 and self._target_gain == 0.0:
                 outdata.fill(0)
                 return
 
+            # Generate sine wave (always generate during fade-out to avoid clicks)
             phase_increment = 2 * np.pi * self.frequency / SAMPLE_RATE
             phases = self.phase + np.arange(frames) * phase_increment
             signal = self.volume * np.sin(phases)
             self.phase = (self.phase + frames * phase_increment) % (2 * np.pi)
 
-            # Smooth fade in/out to avoid clicks when activating/deactivating
+            # Apply fade envelope
+            envelope = self._generate_fade_envelope(frames)
+            signal = signal * envelope
+
             outdata[:] = signal.reshape(-1, 1).astype(np.float32)
+
+    def _generate_fade_envelope(self, frames: int) -> np.ndarray:
+        """
+        Generate a linear fade envelope for the given number of frames.
+
+        Args:
+            frames: Number of audio frames in the buffer.
+
+        Returns:
+            numpy array of envelope values (0.0 to 1.0) for each frame.
+        """
+        envelope = np.zeros(frames, dtype=np.float32)
+
+        for i in range(frames):
+            # Calculate gain increment per sample for smooth fade
+            if self._current_gain < self._target_gain:
+                # Fade in
+                gain_increment = 1.0 / self._fade_samples
+                self._current_gain = min(
+                    self._target_gain, self._current_gain + gain_increment
+                )
+            elif self._current_gain > self._target_gain:
+                # Fade out
+                gain_increment = 1.0 / self._fade_samples
+                self._current_gain = max(
+                    self._target_gain, self._current_gain - gain_increment
+                )
+
+            envelope[i] = self._current_gain
+
+        return envelope
 
     def set_frequency(self, freq):
         with self.lock:
@@ -68,6 +119,35 @@ class Oscillator:
     def set_volume(self, vol):
         with self.lock:
             self.volume = max(0.0, min(1.0, vol))
+
+    def get_fade_samples(self) -> int:
+        """
+        Get the number of samples used for fade transitions.
+
+        Returns:
+            Number of samples in the fade envelope.
+        """
+        return self._fade_samples
+
+    def get_current_gain(self) -> float:
+        """
+        Get the current envelope gain value.
+
+        Returns:
+            Current gain value (0.0 to 1.0).
+        """
+        with self.lock:
+            return self._current_gain
+
+    def set_current_gain_for_testing(self, gain: float):
+        """
+        Set the current envelope gain for testing purposes.
+
+        Args:
+            gain: Gain value to set (0.0 to 1.0).
+        """
+        with self.lock:
+            self._current_gain = max(0.0, min(1.0, gain))
 
 
 # --- STATE LOGIC ---

@@ -196,6 +196,93 @@ class TestOscillator:
             osc.set_volume(0.5)
             mock_lock.__enter__.assert_called()
 
+    def test_fade_envelope_initialization(self):
+        """Test fade envelope state is properly initialized."""
+        osc = Oscillator()
+
+        assert osc.get_current_gain() == 0.0
+        assert osc.get_fade_samples() > 0
+
+    def test_fade_in_gradual_amplitude_increase(self):
+        """Test audio fades in gradually instead of starting at full amplitude."""
+        osc = Oscillator(initial_frequency=1000.0)
+        osc.volume = 1.0
+        osc.is_playing = True
+        frames = 512
+
+        outdata = np.zeros((frames, 1), dtype=np.float32)
+        osc.callback(outdata, frames, None, None)
+
+        # First sample should NOT be at full amplitude (fade-in in progress)
+        # The signal starts at 0 gain and ramps up
+        first_samples = np.abs(outdata[:10].flatten())
+        last_samples = np.abs(outdata[-10:].flatten())
+
+        # First samples should have lower amplitude than later samples
+        assert np.mean(first_samples) < np.mean(last_samples)
+
+    def test_fade_out_gradual_amplitude_decrease(self):
+        """Test audio fades out gradually instead of stopping abruptly."""
+        osc = Oscillator(initial_frequency=1000.0)
+        osc.volume = 1.0
+        osc.is_playing = True
+        osc.set_current_gain_for_testing(1.0)  # Simulate already playing at full gain
+        frames = 512
+
+        # First, generate audio while playing
+        outdata1 = np.zeros((frames, 1), dtype=np.float32)
+        osc.callback(outdata1, frames, None, None)
+
+        # Now stop playing and generate another buffer (should fade out)
+        osc.is_playing = False
+        outdata2 = np.zeros((frames, 1), dtype=np.float32)
+        osc.callback(outdata2, frames, None, None)
+
+        # Fade-out buffer should have decreasing amplitude
+        first_samples = np.abs(outdata2[:10].flatten())
+        last_samples = np.abs(outdata2[-10:].flatten())
+
+        # First samples should have higher amplitude than later samples (fading out)
+        assert np.mean(first_samples) > np.mean(last_samples)
+
+    def test_no_abrupt_start_prevents_clicks(self):
+        """Test that audio never starts at full amplitude (prevents clicks)."""
+        osc = Oscillator(initial_frequency=1000.0)
+        osc.volume = 1.0
+        osc.is_playing = True
+        frames = 64  # Small buffer to catch the first samples
+
+        outdata = np.zeros((frames, 1), dtype=np.float32)
+        osc.callback(outdata, frames, None, None)
+
+        # First sample should be near zero, not at full volume
+        # (allowing small tolerance for floating point)
+        assert np.abs(outdata[0, 0]) < osc.volume * 0.1
+
+    def test_no_abrupt_stop_prevents_clicks(self):
+        """Test that audio never stops abruptly (prevents clicks)."""
+        osc = Oscillator(initial_frequency=1000.0)
+        osc.volume = 1.0
+        osc.is_playing = True
+        osc.set_current_gain_for_testing(1.0)  # Simulate fully playing
+        frames = 64
+
+        # Stop playing
+        osc.is_playing = False
+        outdata = np.zeros((frames, 1), dtype=np.float32)
+        osc.callback(outdata, frames, None, None)
+
+        # Audio should still be generated during fade-out (not all zeros)
+        assert not np.all(outdata == 0)
+
+    def test_fade_duration_reasonable(self):
+        """Test fade duration is in a reasonable range for inaudible transitions."""
+        osc = Oscillator()
+
+        # Fade should be between 5ms and 50ms (typical range for click-free audio)
+        fade_duration_ms = (osc.get_fade_samples() / SAMPLE_RATE) * 1000
+        assert 5 <= fade_duration_ms <= 50
+
 
 # --- YAML Generator Tests ---
 

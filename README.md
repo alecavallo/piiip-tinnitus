@@ -482,6 +482,97 @@ When everything is connected correctly, you should see:
   2. Generate a test sweep: `play -n synth 10 sine 20:20000` (requires `sox`)
   3. You should hear a brief "dip" at your notch frequency
 
+### Audio Routing Issues (CamillaDSP runs but no filtering)
+
+This is the most common issue. CamillaDSP shows "RUNNING" but you don't hear any difference. The problem is incorrect audio routing.
+
+#### Understanding the Audio Chain
+
+For CamillaDSP to filter your audio, it must be **in the middle** of the audio path:
+
+```mermaid
+flowchart LR
+    A[🎵 Application<br/>Spotify, Browser] --> B[🔊 Virtual Device<br/>BlackHole / VB-Cable]
+    B --> C[⚙️ CamillaDSP<br/>filters audio]
+    C --> D[🎧 Headphones<br/>actual output]
+
+    style A fill:#e1f5fe,stroke:#01579b
+    style B fill:#fff3e0,stroke:#e65100
+    style C fill:#f3e5f5,stroke:#7b1fa2
+    style D fill:#e8f5e9,stroke:#2e7d32
+```
+
+**If you set your system output directly to headphones, CamillaDSP never sees the audio!**
+
+#### Checking Your Routing
+
+##### 🍎 macOS
+
+1. **Check System Sound Output:**
+   - Open **System Settings → Sound → Output**
+   - It should show **"BlackHole 2ch"** (NOT your headphones)
+
+2. **Check CamillaDSP config:**
+   ```yaml
+   devices:
+     capture:
+       device: "BlackHole 2ch"   # ← Captures system audio
+     playback:
+       device: "Your Headphones"  # ← Outputs to your ears
+   ```
+
+3. **Verify the chain:**
+   - Play music in Spotify/Browser
+   - In CamillaGUI, the **OUT meters** should show green bars moving
+   - You should hear audio through your headphones
+
+##### 🪟 Windows
+
+1. **Check System Sound Output:**
+   - Right-click the speaker icon in taskbar → **Sound settings**
+   - Under "Output", select **"CABLE Input (VB-Audio Virtual Cable)"**
+
+2. **Check CamillaDSP config:**
+   ```yaml
+   devices:
+     capture:
+       type: Wasapi
+       device: "CABLE Output"     # ← Captures from VB-Cable
+     playback:
+       type: Wasapi
+       device: "Your Headphones"  # ← Your actual audio device
+   ```
+
+##### 🐧 Linux (PulseAudio/PipeWire)
+
+1. **Create a loopback or use EasyEffects** (recommended for beginners)
+
+2. **Check with `pactl`:**
+   ```bash
+   # See where your audio is going
+   pactl info | grep "Default Sink"
+
+   # List available sinks
+   pactl list sinks short
+   ```
+
+#### Quick Diagnostic Checklist
+
+| Check | Expected | If Wrong |
+|-------|----------|----------|
+| System Sound Output | Virtual device (BlackHole/VB-Cable) | Change in Sound settings |
+| CamillaDSP capture device | Same virtual device | Update config.yml |
+| CamillaDSP playback device | Your headphones/speakers | Update config.yml |
+| CamillaGUI OUT meters | Green bars moving | Check routing above |
+| You hear audio | Yes, through headphones | Check playback device |
+
+#### Common Mistakes
+
+1. **System output set to headphones directly** → Audio bypasses CamillaDSP entirely
+2. **Capture device wrong** → CamillaDSP captures silence instead of system audio
+3. **Playback device wrong** → CamillaDSP outputs to wrong device (you hear nothing)
+4. **Virtual driver not installed** → Install BlackHole (macOS) or VB-Cable (Windows)
+
 ---
 
 ## 10. Resources

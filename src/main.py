@@ -261,11 +261,7 @@ filters:
 
 pipeline:
   - type: Filter
-    channel: 0
-    names:
-      - my_notch
-  - type: Filter
-    channel: 1
+    channels: [0, 1]
     names:
       - my_notch
 """
@@ -300,11 +296,7 @@ filters:
 
 pipeline:
   - type: Filter
-    channel: 0
-    names:
-      - tinnitus_sim
-  - type: Filter
-    channel: 1
+    channels: [0, 1]
     names:
       - tinnitus_sim
 """

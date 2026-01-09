@@ -2,6 +2,7 @@ import argparse
 import sys
 import threading
 import time
+import traceback
 
 import numpy as np
 import sounddevice as sd
@@ -537,8 +538,6 @@ def main():
         return
     except Exception as e:  # pylint: disable=broad-exception-caught
         # Log full exception details for debugging unexpected errors
-        import traceback
-
         print(
             f"{Fore.RED}Unexpected error while initializing audio output: {e}",
             file=sys.stderr,

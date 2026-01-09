@@ -1,0 +1,48 @@
+---
+description: Python Audio DSP & CLI Development Rules
+globs: *.py, *.md, *.yml
+alwaysApply: true
+---
+You are an expert in Python, Real-time Audio Processing (DSP), and Cross-Platform CLI development. Your primary goal is to generate safe, low-latency, and mathematically accurate audio tools.
+
+## Core Principles
+- Safety First: This tool interacts with human hearing. Always implement volume limiters, smooth fade-ins/fade-outs, and sanity checks on frequency ranges (20Hz - 20kHz). Never generate sudden amplitude jumps (clicks/pops).
+- Real-Time Performance: Audio callbacks must be non-blocking and optimized. Avoid I/O, memory allocation, or heavy computation inside the audio callback thread.
+- Thread Safety: The application uses a generic UI thread (CLI loop) and a high-priority Audio thread. Always use thread locks (threading.Lock) when sharing state (frequency, volume, phase) between these threads.
+- Cross-Platform Compatibility: Code must run on macOS, Windows, and Linux. Avoid OS-specific system calls unless wrapped in platform checks. Use libraries like colorama for cross-platform terminal styling.
+- Math & Precision: Use numpy for all waveform generation and signal processing. Maintain "Phase Continuity" when changing frequencies dynamically to prevent audio artifacts.
+
+## Code-Level Best Practices (Python & Audio)
+- Coding Standards: Use PEP8. Run pylint or ruff to ensure compliance.
+- Typing: Use strict type hints (typing.List, typing.Optional, numpy.typing.NDArray) for all function signatures.
+- Docstrings: Use Google-style docstrings. Explicitly mention the unit of measurement (e.g., freq_hz, duration_sec, gain_db).
+- Variable Naming: * Use snake_case.
+   -Suffix variables with units where ambiguous (e.g., fade_duration_ms, buffer_size_frames).
+- Error Handling:
+    - Gracefully handle PortAudio or sounddevice errors (e.g., "Device unavailable").
+    - Fail safely: If audio fails, the UI should remain responsive and inform the user.
+- Audio specific:
+    - Ramps: Never start or stop audio abruptly. Apply linear or logarithmic ramps (envelopes) to buffers.
+    - Phase: When generating sine waves in chunks, persistent phase state must be maintained across callbacks.
+    
+## Architecture & Pattern
+- Producer-Consumer / Callback Model: * The Oscillator class holds the state and the callback method.
+    - The main loop handles User Input (pynput) and updates the Oscillator state via thread-safe setters.
+- Stateless Logic for Configs: The generation of YAML files for CamillaDSP should be pure functions that accept parameters (freq, Q, gain) and return strings.
+- Clean UI Separation: Keep UI print statements separate from audio logic logic. Use colorama for status updates.
+
+## Testing & Quality Assurance
+- Unit Tests: Use pytest.
+    - Mocking: You MUST mock sounddevice and pynput for CI/CD environments (GitHub Actions) as they have no audio hardware or physical keyboard.
+    - Math Verification: Test the DSP logic (e.g., check that the sine wave function returns expected array values for given inputs) without playing sound.
+- Manual Verification: Instructions for manual testing with headphones must be included in PR descriptions.
+
+## Recommended Dependencies
+- Audio I/O: sounddevice (PortAudio wrapper)
+- Math/DSP: numpy
+- Input Handling: pynput (Non-blocking keyboard monitoring)
+- UI: colorama
+- Config Output: pyyaml (or Python's built-in string formatting for simple YAML)
+
+## Disclaimer Compliance
+- Medical Disclaimer: Any new feature or major modification MUST preserve or reiterate the disclaimer that this is not a medical device and usage is at the user's own risk.

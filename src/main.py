@@ -199,7 +199,7 @@ filters:
     parameters:
       type: Notch
       freq: {freq:.1f}
-      q: 10.0   # Wide Q to ensure coverage
+      q: 10.0   # Narrow Q for precise targeting
       gain: 0
 
 pipeline:
@@ -260,6 +260,7 @@ def flush_input():
             # Flush stdin buffer
             termios.tcflush(sys.stdin, termios.TCIOFLUSH)
         except (termios.error, OSError):
+            # Terminal may not support flushing, safe to ignore
             pass
     elif HAS_MSVCRT:
         # Fallback for Windows: try to read and discard any pending input
@@ -267,6 +268,7 @@ def flush_input():
             while msvcrt.kbhit():
                 msvcrt.getch()
         except OSError:
+            # Windows terminal may not support kbhit/getch, safe to ignore
             pass
 
 
@@ -326,17 +328,11 @@ def on_press(key):
             elif key == keyboard.Key.right:
                 state["step"] = min(1000, state["step"] * 10)
             elif key == keyboard.Key.left:
-                state["step"] = max(1, state["step"] / 10)
-            elif hasattr(key, "char") and key.char == "+":
+                state["step"] = max(1, state["step"] // 10)
+            elif hasattr(key, "char") and key.char in ("+", "w"):
                 current_vol = osc.get_volume()
                 osc.set_volume(current_vol + 0.05)
-            elif hasattr(key, "char") and key.char == "-":
-                current_vol = osc.get_volume()
-                osc.set_volume(current_vol - 0.05)
-            elif hasattr(key, "char") and key.char == "w":
-                current_vol = osc.get_volume()
-                osc.set_volume(current_vol + 0.05)
-            elif hasattr(key, "char") and key.char == "s":
+            elif hasattr(key, "char") and key.char in ("-", "s"):
                 current_vol = osc.get_volume()
                 osc.set_volume(current_vol - 0.05)
             elif key == keyboard.Key.enter:
@@ -362,6 +358,8 @@ def on_press(key):
 
         print_interface()
     except AttributeError:
+        # Some key events (e.g., special keys without a .char attribute) can raise AttributeError.
+        # These are safe to ignore so that the listener continues processing other key presses.
         pass
 
 

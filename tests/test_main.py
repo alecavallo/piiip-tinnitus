@@ -21,10 +21,10 @@ sys.modules["sounddevice"] = MagicMock()
 
 # Now import the module under test (must be after mocking)
 # pylint: disable=wrong-import-position
-import main
-from main import (SAMPLE_RATE, Oscillator, clear_screen, flush_input,
-                  generate_notch_yaml, generate_simulator_yaml, on_press,
-                  parse_arguments, state)
+from src import main
+from src.main import (SAMPLE_RATE, Oscillator, clear_screen, flush_input,
+                      generate_notch_yaml, generate_simulator_yaml, on_press,
+                      parse_arguments, state)
 
 # pylint: enable=wrong-import-position
 
@@ -446,28 +446,30 @@ class TestUIFunctions:
             output = mock_stdout.getvalue()
             assert "\033[H\033[J" in output
 
-    @patch("main.HAS_MSVCRT", False)
-    @patch("main.HAS_TERMIOS", True)
+    @patch("src.main.HAS_MSVCRT", False)
+    @patch("src.main.HAS_TERMIOS", True)
     def test_flush_input_with_termios(self):
         """Test flush_input uses termios on Unix/macOS."""
-        with patch("main.termios") as mock_termios:
+        with patch("src.main.termios") as mock_termios:
             mock_termios.TCIOFLUSH = 2
             flush_input()
             mock_termios.tcflush.assert_called_once()
 
-    @patch("main.HAS_MSVCRT", False)
-    @patch("main.HAS_TERMIOS", False)
+    @patch("src.main.HAS_MSVCRT", False)
+    @patch("src.main.HAS_TERMIOS", False)
     def test_flush_input_without_termios(self):
         """Test flush_input handles missing termios gracefully."""
         # Should not raise any exception
         flush_input()
 
-    @pytest.mark.skipif(sys.platform != "win32", reason="msvcrt only available on Windows")
-    @patch("main.HAS_TERMIOS", False)
-    @patch("main.HAS_MSVCRT", True)
+    @pytest.mark.skipif(
+        sys.platform != "win32", reason="msvcrt only available on Windows"
+    )
+    @patch("src.main.HAS_TERMIOS", False)
+    @patch("src.main.HAS_MSVCRT", True)
     def test_flush_input_with_msvcrt(self):
         """Test flush_input uses msvcrt on Windows."""
-        with patch("main.msvcrt") as mock_msvcrt:
+        with patch("src.main.msvcrt") as mock_msvcrt:
             mock_msvcrt.kbhit.return_value = False
             flush_input()
             mock_msvcrt.kbhit.assert_called_once()
@@ -542,10 +544,10 @@ class TestInputHandler:
         # Make mock_key equal to keyboard.Key.up
         mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.up
 
-        initial_freq = main.osc.frequency
+        initial_freq = main.osc.get_frequency()
         on_press(mock_key)
 
-        assert main.osc.frequency == initial_freq + state["step"]
+        assert main.osc.get_frequency() == initial_freq + state["step"]
 
     def test_on_press_down_decreases_frequency(self):
         """Test DOWN arrow decreases frequency."""
@@ -563,15 +565,15 @@ class TestInputHandler:
 
         mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.down
 
-        initial_freq = main.osc.frequency
+        initial_freq = main.osc.get_frequency()
         on_press(mock_key)
 
-        assert main.osc.frequency == initial_freq - state["step"]
+        assert main.osc.get_frequency() == initial_freq - state["step"]
 
     def test_on_press_w_increases_volume(self):
         """Test 'w' key increases volume."""
         main.osc = Oscillator()
-        main.osc.volume = 0.1
+        main.osc.set_volume(0.1)
         state["mode"] = "MATCHING"
 
         mock_key = MagicMock()
@@ -586,15 +588,15 @@ class TestInputHandler:
         # Mock comparisons to return False
         mock_key.__eq__ = lambda self, other: False
 
-        initial_vol = main.osc.volume
+        initial_vol = main.osc.get_volume()
         on_press(mock_key)
 
-        assert main.osc.volume == pytest.approx(initial_vol + 0.05, abs=1e-6)
+        assert main.osc.get_volume() == pytest.approx(initial_vol + 0.05, abs=1e-6)
 
     def test_on_press_s_decreases_volume(self):
         """Test 's' key decreases volume."""
         main.osc = Oscillator()
-        main.osc.volume = 0.5
+        main.osc.set_volume(0.5)
         state["mode"] = "MATCHING"
 
         mock_key = MagicMock()
@@ -608,10 +610,184 @@ class TestInputHandler:
 
         mock_key.__eq__ = lambda self, other: False
 
-        initial_vol = main.osc.volume
+        initial_vol = main.osc.get_volume()
         on_press(mock_key)
 
-        assert main.osc.volume == pytest.approx(initial_vol - 0.05, abs=1e-6)
+        assert main.osc.get_volume() == pytest.approx(initial_vol - 0.05, abs=1e-6)
+
+    def test_on_press_plus_increases_volume(self):
+        """Test '+' key increases volume."""
+        main.osc = Oscillator()
+        main.osc.set_volume(0.1)
+        state["mode"] = "MATCHING"
+
+        mock_key = MagicMock()
+        mock_key.char = "+"
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.left = MagicMock()
+        main.keyboard.Key.right = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: False
+
+        initial_vol = main.osc.get_volume()
+        on_press(mock_key)
+
+        assert main.osc.get_volume() == pytest.approx(initial_vol + 0.05, abs=1e-6)
+
+    def test_on_press_minus_decreases_volume(self):
+        """Test '-' key decreases volume."""
+        main.osc = Oscillator()
+        main.osc.set_volume(0.5)
+        state["mode"] = "MATCHING"
+
+        mock_key = MagicMock()
+        mock_key.char = "-"
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.left = MagicMock()
+        main.keyboard.Key.right = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: False
+
+        initial_vol = main.osc.get_volume()
+        on_press(mock_key)
+
+        assert main.osc.get_volume() == pytest.approx(initial_vol - 0.05, abs=1e-6)
+
+    def test_on_press_right_increases_step(self):
+        """Test RIGHT arrow increases step precision."""
+        state["mode"] = "MATCHING"
+        state["step"] = 100
+
+        mock_key = MagicMock()
+        main.keyboard.Key.right = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.left = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.right
+
+        initial_step = state["step"]
+        on_press(mock_key)
+
+        assert state["step"] == min(1000, initial_step * 10)
+
+    def test_on_press_left_decreases_step(self):
+        """Test LEFT arrow decreases step precision."""
+        state["mode"] = "MATCHING"
+        state["step"] = 100
+
+        mock_key = MagicMock()
+        main.keyboard.Key.left = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.right = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.left
+
+        initial_step = state["step"]
+        on_press(mock_key)
+
+        assert state["step"] == max(1, initial_step // 10)
+        assert isinstance(state["step"], int)  # Ensure it remains an integer
+
+    def test_on_press_enter_in_matching_mode(self):
+        """Test ENTER key in MATCHING mode transitions to OCTAVE_CHECK."""
+        main.osc = Oscillator(initial_frequency=4590.0)
+        state["mode"] = "MATCHING"
+        state["base_freq"] = 0
+
+        mock_key = MagicMock()
+        main.keyboard.Key.enter = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.left = MagicMock()
+        main.keyboard.Key.right = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.enter
+
+        current_freq = main.osc.get_frequency()
+        on_press(mock_key)
+
+        assert state["mode"] == "OCTAVE_CHECK"
+        assert state["base_freq"] == current_freq
+
+    def test_on_press_enter_in_octave_check_mode(self):
+        """Test ENTER key in OCTAVE_CHECK mode finalizes frequency."""
+        main.osc = Oscillator(initial_frequency=4590.0)
+        state["mode"] = "OCTAVE_CHECK"
+        state["base_freq"] = 4590.0
+        state["octave_option"] = 0
+        state["final_freq"] = 0
+        state["running"] = True
+
+        mock_key = MagicMock()
+        main.keyboard.Key.enter = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.enter
+
+        base = state["base_freq"]
+        opts = [base, base / 2, base * 2]
+        expected_freq = opts[state["octave_option"]]
+
+        on_press(mock_key)
+
+        assert state["mode"] == "FINISHED"
+        assert state["final_freq"] == expected_freq
+        assert state["running"] is False
+
+    def test_on_press_up_in_octave_check_mode(self):
+        """Test UP arrow in OCTAVE_CHECK mode cycles octave options."""
+        main.osc = Oscillator(initial_frequency=4590.0)
+        state["mode"] = "OCTAVE_CHECK"
+        state["base_freq"] = 4590.0
+        state["octave_option"] = 1
+
+        mock_key = MagicMock()
+        main.keyboard.Key.up = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.down = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.up
+
+        initial_option = state["octave_option"]
+        on_press(mock_key)
+
+        assert state["octave_option"] == (initial_option - 1) % 3
+
+    def test_on_press_down_in_octave_check_mode(self):
+        """Test DOWN arrow in OCTAVE_CHECK mode cycles octave options."""
+        main.osc = Oscillator(initial_frequency=4590.0)
+        state["mode"] = "OCTAVE_CHECK"
+        state["base_freq"] = 4590.0
+        state["octave_option"] = 1
+
+        mock_key = MagicMock()
+        main.keyboard.Key.down = mock_key
+        main.keyboard.Key.esc = MagicMock()
+        main.keyboard.Key.up = MagicMock()
+        main.keyboard.Key.enter = MagicMock()
+
+        mock_key.__eq__ = lambda self, other: other is main.keyboard.Key.down
+
+        initial_option = state["octave_option"]
+        on_press(mock_key)
+
+        assert state["octave_option"] == (initial_option + 1) % 3
 
 
 # --- Audio Configuration Tests ---

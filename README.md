@@ -76,7 +76,7 @@ pip install numpy sounddevice pynput colorama pyyaml
 Run the script from your terminal:
 
 ```bash
-python tinitus_tool_v2.py
+python src/main.py
 ```
 
 ### The Process

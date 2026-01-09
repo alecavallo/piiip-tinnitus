@@ -149,6 +149,26 @@ class Oscillator:
         with self.lock:
             self._current_gain = max(0.0, min(1.0, gain))
 
+    def get_frequency(self) -> float:
+        """
+        Get the current frequency in a thread-safe manner.
+
+        Returns:
+            Current frequency in Hz (20-20000).
+        """
+        with self.lock:
+            return self.frequency
+
+    def get_volume(self) -> float:
+        """
+        Get the current volume in a thread-safe manner.
+
+        Returns:
+            Current volume (0.0 to 1.0).
+        """
+        with self.lock:
+            return self.volume
+
 
 # --- STATE LOGIC ---
 osc = None  # Will be initialized in main() with optional frequency
@@ -259,8 +279,10 @@ def print_interface():
 
     if state["mode"] == "MATCHING":
         step_value = state["step"]
-        print(f"Frequency: {Fore.YELLOW}{osc.frequency:.2f} Hz{Fore.RESET}")
-        print(f"Volume:    {Fore.GREEN}{int(osc.volume * 100)}%{Fore.RESET}")
+        freq = osc.get_frequency()
+        vol = osc.get_volume()
+        print(f"Frequency: {Fore.YELLOW}{freq:.2f} Hz{Fore.RESET}")
+        print(f"Volume:    {Fore.GREEN}{int(vol * 100)}%{Fore.RESET}")
         print(f"Step:      {step_value} Hz")
         print("")
         print(Fore.WHITE + Back.BLUE + " CONTROLS: ")
@@ -296,23 +318,29 @@ def on_press(key):
 
         if state["mode"] == "MATCHING":
             if key == keyboard.Key.up:
-                osc.set_frequency(osc.frequency + state["step"])
+                current_freq = osc.get_frequency()
+                osc.set_frequency(current_freq + state["step"])
             elif key == keyboard.Key.down:
-                osc.set_frequency(osc.frequency - state["step"])
+                current_freq = osc.get_frequency()
+                osc.set_frequency(current_freq - state["step"])
             elif key == keyboard.Key.right:
                 state["step"] = min(1000, state["step"] * 10)
             elif key == keyboard.Key.left:
                 state["step"] = max(1, state["step"] / 10)
             elif hasattr(key, "char") and key.char == "+":
-                osc.set_volume(osc.volume + 0.05)
+                current_vol = osc.get_volume()
+                osc.set_volume(current_vol + 0.05)
             elif hasattr(key, "char") and key.char == "-":
-                osc.set_volume(osc.volume - 0.05)
+                current_vol = osc.get_volume()
+                osc.set_volume(current_vol - 0.05)
             elif hasattr(key, "char") and key.char == "w":
-                osc.set_volume(osc.volume + 0.05)
+                current_vol = osc.get_volume()
+                osc.set_volume(current_vol + 0.05)
             elif hasattr(key, "char") and key.char == "s":
-                osc.set_volume(osc.volume - 0.05)
+                current_vol = osc.get_volume()
+                osc.set_volume(current_vol - 0.05)
             elif key == keyboard.Key.enter:
-                state["base_freq"] = osc.frequency
+                state["base_freq"] = osc.get_frequency()
                 state["mode"] = "OCTAVE_CHECK"
                 osc.set_frequency(state["base_freq"])
 

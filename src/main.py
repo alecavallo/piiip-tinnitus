@@ -8,6 +8,22 @@ import sounddevice as sd
 from colorama import Back, Fore, Style, init
 from pynput import keyboard
 
+# Try to import termios for terminal control (Unix/macOS)
+try:
+    import termios
+
+    HAS_TERMIOS = True
+except ImportError:
+    HAS_TERMIOS = False
+
+# Try to import msvcrt for terminal control (Windows)
+try:
+    import msvcrt
+
+    HAS_MSVCRT = True
+except ImportError:
+    HAS_MSVCRT = False
+
 # Initialize colorama
 init(autoreset=True)
 
@@ -135,6 +151,25 @@ def clear_screen():
     print("\033[H\033[J", end="")
 
 
+def flush_input():
+    """
+    Flush the terminal input buffer to prevent key presses from appearing after exit.
+    """
+    if HAS_TERMIOS:
+        try:
+            # Flush stdin buffer
+            termios.tcflush(sys.stdin, termios.TCIOFLUSH)
+        except (termios.error, OSError):
+            pass
+    elif HAS_MSVCRT:
+        # Fallback for Windows: try to read and discard any pending input
+        try:
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except OSError:
+            pass
+
+
 def print_interface():
     clear_screen()
     print(Fore.CYAN + Style.BRIGHT + "========================================")
@@ -151,6 +186,7 @@ def print_interface():
         print(Fore.WHITE + Back.BLUE + " CONTROLS: ")
         print(" [⬆/⬇] Adjust Frequency")
         print(" [⮕/⬅] Change precision (1, 10, 100... Hz)")
+        print(" [W/S]   Increase/Decrease Volume")
         print(" [ENTER] Confirm and verify Octave")
         print(" [ESC]   Exit")
 
@@ -176,7 +212,7 @@ def on_press(key):
     try:
         if key == keyboard.Key.esc:
             state["running"] = False
-            return False
+            return  # Don't return False, let listener continue until main loop stops
 
         if state["mode"] == "MATCHING":
             if key == keyboard.Key.up:
@@ -190,6 +226,10 @@ def on_press(key):
             elif hasattr(key, "char") and key.char == "+":
                 osc.set_volume(osc.volume + 0.05)
             elif hasattr(key, "char") and key.char == "-":
+                osc.set_volume(osc.volume - 0.05)
+            elif hasattr(key, "char") and key.char == "w":
+                osc.set_volume(osc.volume + 0.05)
+            elif hasattr(key, "char") and key.char == "s":
                 osc.set_volume(osc.volume - 0.05)
             elif key == keyboard.Key.enter:
                 state["base_freq"] = osc.frequency
@@ -208,7 +248,7 @@ def on_press(key):
                 state["final_freq"] = opts[state["octave_option"]]
                 state["mode"] = "FINISHED"
                 state["running"] = False
-                return False
+                return  # Don't return False, let listener continue until main loop stops
 
             osc.set_frequency(opts[state["octave_option"]])
 
@@ -256,9 +296,20 @@ def main():
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
         print_interface()
-        while state["running"]:
+        try:
+            while state["running"]:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            state["running"] = False
+        finally:
+            # Ensure listener stops and all events are processed
+            if listener.is_alive():
+                listener.stop()
+            listener.join(timeout=1.0)
+            # Flush input buffer to prevent keys from appearing
+            flush_input()
+            # Small delay to ensure all suppressed keys are processed
             time.sleep(0.1)
-        listener.join()
 
     if state["mode"] == "FINISHED":
         clear_screen()

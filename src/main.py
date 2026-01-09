@@ -1,3 +1,4 @@
+import argparse
 import sys
 import threading
 import time
@@ -20,8 +21,8 @@ class Oscillator:
     Sine wave generator with phase continuity.
     """
 
-    def __init__(self):
-        self.frequency = 1000.0
+    def __init__(self, initial_frequency: float = 1000.0):
+        self.frequency = max(20, min(20000, initial_frequency))
         self.volume = 0.1
         self.phase = 0.0
         self.is_playing = False
@@ -54,7 +55,7 @@ class Oscillator:
 
 
 # --- STATE LOGIC ---
-osc = Oscillator()
+osc = None  # Will be initialized in main() with optional frequency
 state = {
     "running": True,
     "mode": "MATCHING",
@@ -216,7 +217,39 @@ def on_press(key):
         pass
 
 
+def parse_arguments():
+    """
+    Parse command line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed arguments
+    """
+    parser = argparse.ArgumentParser(
+        description="Tinnitus Frequency Matcher - Identify your tinnitus frequency and generate CamillaDSP filters"
+    )
+    parser.add_argument(
+        "-f",
+        "--frequency",
+        type=float,
+        default=1000.0,
+        help="Initial frequency in Hz to start from (default: 1000.0). Must be between 20 and 20000 Hz.",
+    )
+    args = parser.parse_args()
+
+    # Validate frequency range
+    if not 20 <= args.frequency <= 20000:
+        parser.error("Frequency must be between 20 and 20000 Hz")
+
+    return args
+
+
 def main():
+    args = parse_arguments()
+
+    # Initialize oscillator with the specified frequency
+    global osc
+    osc = Oscillator(initial_frequency=args.frequency)
+
     stream = sd.OutputStream(channels=1, samplerate=SAMPLE_RATE, callback=osc.callback)
     with stream:
         osc.is_playing = True

@@ -17,7 +17,7 @@ You are an expert in Python, Real-time Audio Processing (DSP), and Cross-Platfor
 - Typing: Use strict type hints (typing.List, typing.Optional, numpy.typing.NDArray) for all function signatures.
 - Docstrings: Use Google-style docstrings. Explicitly mention the unit of measurement (e.g., freq_hz, duration_sec, gain_db).
 - Variable Naming: * Use snake_case.
-   -Suffix variables with units where ambiguous (e.g., fade_duration_ms, buffer_size_frames).
+  - Suffix variables with units where ambiguous (e.g., fade_duration_ms, buffer_size_frames).
 - Error Handling:
     - Gracefully handle PortAudio or sounddevice errors (e.g., "Device unavailable").
     - Fail safely: If audio fails, the UI should remain responsive and inform the user.

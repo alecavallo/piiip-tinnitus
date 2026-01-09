@@ -2,6 +2,7 @@ import argparse
 import sys
 import threading
 import time
+import traceback
 
 import numpy as np
 import sounddevice as sd
@@ -53,7 +54,6 @@ class Oscillator:
         self._fade_samples = int(SAMPLE_RATE * self.FADE_DURATION_MS / 1000.0)
         self._current_gain = 0.0  # Current envelope gain (0.0 to 1.0)
         self._target_gain = 0.0  # Target envelope gain
-        self._is_fading = False  # True while fade is in progress
 
     def callback(self, outdata, frames, _time, status):
         # Note: We intentionally don't log status here to avoid I/O in the
@@ -537,8 +537,13 @@ def main():
         )
         return
     except Exception as e:  # pylint: disable=broad-exception-caught
+        # Log full exception details for debugging unexpected errors
         print(
             f"{Fore.RED}Unexpected error while initializing audio output: {e}",
+            file=sys.stderr,
+        )
+        print(
+            f"{Fore.RED}Full traceback:\n{traceback.format_exc()}",
             file=sys.stderr,
         )
         return

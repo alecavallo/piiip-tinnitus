@@ -24,7 +24,7 @@ sys.modules["sounddevice"] = MagicMock()
 from src import main
 from src.main import (SAMPLE_RATE, Oscillator, clear_screen, flush_input,
                       generate_notch_yaml, generate_simulator_yaml, on_press,
-                      parse_arguments, state)
+                      parse_arguments, print_interface, state)
 
 # pylint: enable=wrong-import-position
 
@@ -474,6 +474,47 @@ class TestUIFunctions:
             flush_input()
             mock_msvcrt.kbhit.assert_called_once()
 
+    def test_print_interface_returns_early_if_osc_is_none(self):
+        """Test print_interface returns early when osc is None."""
+        original_osc = main.osc
+        try:
+            main.osc = None
+            # Should not raise any exception
+            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                print_interface()
+                # Nothing should be printed when osc is None
+                assert mock_stdout.getvalue() == ""
+        finally:
+            main.osc = original_osc
+
+    def test_print_interface_matching_mode(self):
+        """Test print_interface displays correctly in MATCHING mode."""
+        main.osc = Oscillator(initial_frequency=1000.0)
+        state["mode"] = "MATCHING"
+        state["step"] = 100
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+            print_interface()
+            output = mock_stdout.getvalue()
+            assert "TINNITUS FREQUENCY MATCHER" in output
+            assert "1000.00 Hz" in output
+            assert "CONTROLS" in output
+
+    def test_print_interface_octave_check_mode(self):
+        """Test print_interface displays correctly in OCTAVE_CHECK mode."""
+        main.osc = Oscillator(initial_frequency=4000.0)
+        state["mode"] = "OCTAVE_CHECK"
+        state["base_freq"] = 4000.0
+        state["octave_option"] = 0
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+            print_interface()
+            output = mock_stdout.getvalue()
+            assert "OCTAVE VERIFICATION" in output
+            assert "Original" in output
+            assert "-1 Octave" in output
+            assert "+1 Octave" in output
+
 
 # --- State Management Tests ---
 
@@ -491,6 +532,27 @@ class TestStateManagement:
         assert "octave_option" in state
         assert "final_freq" in state
 
+    def test_thread_safe_dict_getitem(self):
+        """Test ThreadSafeDict __getitem__ is thread-safe."""
+        state["test_key"] = "test_value"
+        assert state["test_key"] == "test_value"
+
+    def test_thread_safe_dict_setitem(self):
+        """Test ThreadSafeDict __setitem__ is thread-safe."""
+        state["new_key"] = 42
+        assert state["new_key"] == 42
+
+    def test_thread_safe_dict_get(self):
+        """Test ThreadSafeDict get method with default."""
+        assert state.get("nonexistent_key", "default") == "default"
+        state["existing_key"] = "value"
+        assert state.get("existing_key") == "value"
+
+    def test_thread_safe_dict_update(self):
+        """Test ThreadSafeDict update method."""
+        state.update({"update_key": "updated"})
+        assert state["update_key"] == "updated"
+
 
 # --- Input Handler Tests ---
 
@@ -503,6 +565,21 @@ class TestInputHandler:
         # Reset state before each test
         state["running"] = True
         state["mode"] = "MATCHING"
+
+    def test_on_press_returns_early_if_osc_is_none(self):
+        """Test on_press returns early when osc is None."""
+        original_osc = main.osc
+        original_running = state["running"]
+        try:
+            main.osc = None
+            mock_key = MagicMock()
+            mock_key.char = "w"
+            # Should not raise any exception
+            on_press(mock_key)
+            # State should not change when osc is None
+            assert state["running"] == original_running
+        finally:
+            main.osc = original_osc
         state["step"] = 100
         state["base_freq"] = 0
         state["octave_option"] = 0

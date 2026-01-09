@@ -29,7 +29,6 @@ init(autoreset=True)
 
 # --- AUDIO CONFIGURATION ---
 SAMPLE_RATE = 44100
-BLOCK_SIZE = 1024
 
 
 class Oscillator:
@@ -85,30 +84,35 @@ class Oscillator:
         """
         Generate a linear fade envelope for the given number of frames.
 
+        Uses vectorized NumPy operations for efficient real-time audio processing.
+
         Args:
             frames: Number of audio frames in the buffer.
 
         Returns:
             numpy array of envelope values (0.0 to 1.0) for each frame.
         """
-        envelope = np.zeros(frames, dtype=np.float32)
+        # If already at target gain, return a constant envelope
+        if self._current_gain == self._target_gain:
+            return np.full(frames, self._current_gain, dtype=np.float32)
 
-        for i in range(frames):
-            # Calculate gain increment per sample for smooth fade
-            if self._current_gain < self._target_gain:
-                # Fade in
-                gain_increment = 1.0 / self._fade_samples
-                self._current_gain = min(
-                    self._target_gain, self._current_gain + gain_increment
-                )
-            elif self._current_gain > self._target_gain:
-                # Fade out
-                gain_increment = 1.0 / self._fade_samples
-                self._current_gain = max(
-                    self._target_gain, self._current_gain - gain_increment
-                )
+        # Determine fade direction: +1 for fade in, -1 for fade out
+        direction = 1.0 if self._target_gain > self._current_gain else -1.0
+        fade_step = direction * (1.0 / self._fade_samples)
 
-            envelope[i] = self._current_gain
+        # Vectorized computation of envelope over all frames
+        idx = np.arange(1, frames + 1, dtype=np.float32)
+        gains = self._current_gain + idx * fade_step
+
+        if direction > 0:
+            # Fade in: clamp so we do not overshoot the target
+            envelope = np.minimum(gains, self._target_gain).astype(np.float32)
+        else:
+            # Fade out: clamp so we do not undershoot the target
+            envelope = np.maximum(gains, self._target_gain).astype(np.float32)
+
+        # Update current gain to the last value for continuity across callbacks
+        self._current_gain = float(envelope[-1])
 
         return envelope
 
@@ -127,7 +131,8 @@ class Oscillator:
         Returns:
             Number of samples in the fade envelope.
         """
-        return self._fade_samples
+        with self.lock:
+            return self._fade_samples
 
     def get_current_gain(self) -> float:
         """
@@ -171,15 +176,48 @@ class Oscillator:
 
 
 # --- STATE LOGIC ---
+
+
+class ThreadSafeDict(dict):
+    """
+    A thread-safe dictionary wrapper using an internal lock.
+
+    Ensures concurrent gets/sets from multiple threads (keyboard listener
+    and main thread) do not race.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lock = threading.Lock()
+
+    def __getitem__(self, key):
+        with self._lock:
+            return super().__getitem__(key)
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            return super().__setitem__(key, value)
+
+    def get(self, key, default=None):
+        with self._lock:
+            return super().get(key, default)
+
+    def update(self, *args, **kwargs):
+        with self._lock:
+            return super().update(*args, **kwargs)
+
+
 osc = None  # Will be initialized in main() with optional frequency
-state = {
-    "running": True,
-    "mode": "MATCHING",
-    "step": 100,
-    "base_freq": 0,
-    "octave_option": 0,
-    "final_freq": 0,
-}
+state = ThreadSafeDict(
+    {
+        "running": True,
+        "mode": "MATCHING",
+        "step": 100,
+        "base_freq": 0,
+        "octave_option": 0,
+        "final_freq": 0,
+    }
+)
 
 # --- CAMILLA DSP YAML GENERATORS ---
 
@@ -273,6 +311,10 @@ def flush_input():
 
 
 def print_interface():
+    # Guard against osc not yet being initialized
+    if osc is None:
+        return
+
     clear_screen()
     print(Fore.CYAN + Style.BRIGHT + "========================================")
     print(Fore.CYAN + Style.BRIGHT + "       TINNITUS FREQUENCY MATCHER       ")
@@ -313,6 +355,10 @@ def print_interface():
 
 
 def on_press(key):
+    # Guard against osc not yet being initialized
+    if osc is None:
+        return
+
     try:
         if key == keyboard.Key.esc:
             state["running"] = False

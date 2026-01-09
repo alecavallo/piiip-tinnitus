@@ -24,7 +24,7 @@ You are an expert in Python, Real-time Audio Processing (DSP), and Cross-Platfor
 - Audio specific:
     - Ramps: Never start or stop audio abruptly. Apply linear or logarithmic ramps (envelopes) to buffers.
     - Phase: When generating sine waves in chunks, persistent phase state must be maintained across callbacks.
-    
+
 ## Architecture & Pattern
 - Producer-Consumer / Callback Model: * The Oscillator class holds the state and the callback method.
     - The main loop handles User Input (pynput) and updates the Oscillator state via thread-safe setters.

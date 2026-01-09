@@ -1,23 +1,23 @@
 import sys
-import time
-import math
 import threading
+import time
+
 import numpy as np
 import sounddevice as sd
+from colorama import Back, Fore, Style, init
 from pynput import keyboard
-from colorama import init, Fore, Style, Back
 
-# Inicializar colorama
+# Initialize colorama
 init(autoreset=True)
 
-# --- CONFIGURACIÓN DE AUDIO ---
+# --- AUDIO CONFIGURATION ---
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 1024
 
 
 class Oscillator:
     """
-    Generador de onda sinusoidal con continuidad de fase.
+    Sine wave generator with phase continuity.
     """
 
     def __init__(self):
@@ -27,7 +27,7 @@ class Oscillator:
         self.is_playing = False
         self.lock = threading.Lock()
 
-    def callback(self, outdata, frames, time, status):
+    def callback(self, outdata, frames, _time, status):
         if status:
             print(status, file=sys.stderr)
 
@@ -36,13 +36,12 @@ class Oscillator:
                 outdata.fill(0)
                 return
 
-            t = np.arange(frames) / SAMPLE_RATE
             phase_increment = 2 * np.pi * self.frequency / SAMPLE_RATE
             phases = self.phase + np.arange(frames) * phase_increment
             signal = self.volume * np.sin(phases)
             self.phase = (self.phase + frames * phase_increment) % (2 * np.pi)
 
-            # Fade in/out suave para evitar clicks al activar/desactivar
+            # Smooth fade in/out to avoid clicks when activating/deactivating
             outdata[:] = signal.reshape(-1, 1).astype(np.float32)
 
     def set_frequency(self, freq):
@@ -54,7 +53,7 @@ class Oscillator:
             self.volume = max(0.0, min(1.0, vol))
 
 
-# --- LÓGICA DE ESTADO ---
+# --- STATE LOGIC ---
 osc = Oscillator()
 state = {
     "running": True,
@@ -65,17 +64,17 @@ state = {
     "final_freq": 0,
 }
 
-# --- GENERADORES YAML CAMILLA DSP ---
+# --- CAMILLA DSP YAML GENERATORS ---
 
 
 def generate_notch_yaml(freq):
     """
-    Genera el filtro terapéutico: Elimina la frecuencia del tinnitus.
+    Generates the therapeutic filter: Removes the tinnitus frequency.
     """
     return f"""
-# Tinnitus NOTCH Filter (Terapéutico)
-# Frecuencia objetivo: {freq:.2f} Hz
-# Objetivo: Eliminar la energía en esta frecuencia para habituación.
+# Tinnitus NOTCH Filter (Therapeutic)
+# Target frequency: {freq:.2f} Hz
+# Purpose: Remove energy at this frequency for habituation therapy.
 
 filters:
   my_notch:
@@ -83,7 +82,7 @@ filters:
     parameters:
       type: Notch
       freq: {freq:.1f}
-      q: 10.0   # Q ancho para asegurar cobertura
+      q: 10.0   # Wide Q to ensure coverage
       gain: 0
 
 pipeline:
@@ -100,14 +99,14 @@ pipeline:
 
 def generate_simulator_yaml(freq):
     """
-    Genera el filtro simulador: Exagera la frecuencia del tinnitus.
-    Usa un Peaking filter con ganancia positiva alta.
+    Generates the simulator filter: Exaggerates the tinnitus frequency.
+    Uses a Peaking filter with high positive gain.
     """
     return f"""
-# Tinnitus SIMULATOR (Empatía)
-# Frecuencia objetivo: {freq:.2f} Hz
-# Objetivo: Resaltar agresivamente esta frecuencia para simular el síntoma.
-# PRECAUCIÓN: Bajar el volumen antes de aplicar.
+# Tinnitus SIMULATOR (Empathy)
+# Target frequency: {freq:.2f} Hz
+# Purpose: Aggressively boost this frequency to simulate the symptom.
+# WARNING: Lower the volume before applying.
 
 filters:
   tinnitus_sim:
@@ -115,8 +114,8 @@ filters:
     parameters:
       type: Peaking
       freq: {freq:.1f}
-      q: 20.0    # Q muy estrecho, tono puro
-      gain: 12.0 # +12dB de ganancia en esa frecuencia
+      q: 20.0    # Very narrow Q, pure tone
+      gain: 12.0 # +12dB gain at that frequency
 
 pipeline:
   - type: Filter
@@ -130,7 +129,7 @@ pipeline:
 """
 
 
-# --- UI & UTILIDADES ---
+# --- UI & UTILITIES ---
 def clear_screen():
     print("\033[H\033[J", end="")
 
@@ -143,23 +142,24 @@ def print_interface():
     print("")
 
     if state["mode"] == "MATCHING":
-        print(f"Frecuencia: {Fore.YELLOW}{osc.frequency:.2f} Hz{Fore.RESET}")
-        print(f"Volumen:    {Fore.GREEN}{int(osc.volume * 100)}%{Fore.RESET}")
-        print(f"Paso:       {state['step']} Hz")
+        step_value = state["step"]
+        print(f"Frequency: {Fore.YELLOW}{osc.frequency:.2f} Hz{Fore.RESET}")
+        print(f"Volume:    {Fore.GREEN}{int(osc.volume * 100)}%{Fore.RESET}")
+        print(f"Step:      {step_value} Hz")
         print("")
-        print(Fore.WHITE + Back.BLUE + " CONTROLES: ")
-        print(" [⬆/⬇] Ajustar Frecuencia")
-        print(" [⮕/⬅] Cambiar precisión (1, 10, 100... Hz)")
-        print(" [ENTER] Confirmar y verificar Octava")
-        print(" [ESC]   Salir")
+        print(Fore.WHITE + Back.BLUE + " CONTROLS: ")
+        print(" [⬆/⬇] Adjust Frequency")
+        print(" [⮕/⬅] Change precision (1, 10, 100... Hz)")
+        print(" [ENTER] Confirm and verify Octave")
+        print(" [ESC]   Exit")
 
     elif state["mode"] == "OCTAVE_CHECK":
         base = state["base_freq"]
         opts = [base, base / 2, base * 2]
-        labels = ["Original", "-1 Octava", "+1 Octava"]
+        labels = ["Original", "-1 Octave", "+1 Octave"]
 
-        print(Fore.MAGENTA + "VERIFICACIÓN DE OCTAVA")
-        print("Selecciona cuál suena idéntico a tu tinnitus:")
+        print(Fore.MAGENTA + "OCTAVE VERIFICATION")
+        print("Select which one sounds identical to your tinnitus:")
         print("")
 
         for i in range(3):
@@ -168,7 +168,7 @@ def print_interface():
             print(f"{color}{prefix}{labels[i]}: {opts[i]:.2f} Hz")
 
         print("")
-        print(Fore.WHITE + Back.BLUE + " [ENTER] Generar Archivos de Configuración ")
+        print(Fore.WHITE + Back.BLUE + " [ENTER] Generate Configuration Files ")
 
 
 def on_press(key):
@@ -230,24 +230,22 @@ def main():
     if state["mode"] == "FINISHED":
         clear_screen()
         final_f = state["final_freq"]
-        print(Fore.GREEN + Style.BRIGHT + "¡PROCESO FINALIZADO!")
-        print(f"Frecuencia detectada: {final_f:.2f} Hz\n")
+        print(Fore.GREEN + Style.BRIGHT + "PROCESS COMPLETED!")
+        print(f"Detected frequency: {final_f:.2f} Hz\n")
 
-        # Generar Notch (Terapia)
+        # Generate Notch (Therapy)
         notch_file = "camilla_notch_therapy.yml"
-        with open(notch_file, "w") as f:
+        with open(notch_file, "w", encoding="utf-8") as f:
             f.write(generate_notch_yaml(final_f))
-        print(f"1. Filtro Terapéutico guardado en: {Fore.YELLOW}{notch_file}")
+        print(f"1. Therapeutic filter saved to: {Fore.YELLOW}{notch_file}")
 
-        # Generar Simulador (Empatía)
+        # Generate Simulator (Empathy)
         sim_file = "camilla_simulator.yml"
-        with open(sim_file, "w") as f:
+        with open(sim_file, "w", encoding="utf-8") as f:
             f.write(generate_simulator_yaml(final_f))
-        print(f"2. Simulador de Tinnitus guardado en: {Fore.YELLOW}{sim_file}")
+        print(f"2. Tinnitus simulator saved to: {Fore.YELLOW}{sim_file}")
 
-        print(
-            f"\n{Fore.CYAN}Copia estos archivos a tu carpeta de configuración de CamillaDSP."
-        )
+        print(f"\n{Fore.CYAN}Copy these files to your CamillaDSP configuration folder.")
 
 
 if __name__ == "__main__":

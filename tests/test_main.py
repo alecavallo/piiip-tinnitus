@@ -289,6 +289,28 @@ class TestOscillator:
         fade_duration_ms = (osc.get_fade_samples() / SAMPLE_RATE) * 1000
         assert 5 <= fade_duration_ms <= 50
 
+    def test_set_is_playing_thread_safe(self):
+        """Test set_is_playing method is thread-safe."""
+        osc = Oscillator()
+        assert osc.get_is_playing() is False
+
+        osc.set_is_playing(True)
+        assert osc.get_is_playing() is True
+
+        osc.set_is_playing(False)
+        assert osc.get_is_playing() is False
+
+    def test_get_is_playing_thread_safe(self):
+        """Test get_is_playing method uses lock."""
+        osc = Oscillator()
+
+        # Verify lock is acquired during get_is_playing
+        with patch.object(osc, "lock") as mock_lock:
+            mock_lock.__enter__ = MagicMock(return_value=None)
+            mock_lock.__exit__ = MagicMock(return_value=None)
+            osc.get_is_playing()
+            mock_lock.__enter__.assert_called()
+
 
 # --- YAML Generator Tests ---
 
@@ -320,8 +342,7 @@ class TestYAMLGenerators:
         yaml_output = generate_notch_yaml(1000.0)
 
         assert "pipeline:" in yaml_output
-        assert "channel: 0" in yaml_output
-        assert "channel: 1" in yaml_output
+        assert "channels: [0, 1]" in yaml_output
 
     def test_generate_notch_yaml_contains_q_factor(self):
         """Test notch YAML contains Q factor."""
@@ -365,8 +386,7 @@ class TestYAMLGenerators:
         yaml_output = generate_simulator_yaml(1000.0)
 
         assert "pipeline:" in yaml_output
-        assert "channel: 0" in yaml_output
-        assert "channel: 1" in yaml_output
+        assert "channels: [0, 1]" in yaml_output
 
     def test_generate_simulator_yaml_narrow_q(self):
         """Test simulator YAML has narrow Q for pure tone."""
@@ -382,6 +402,18 @@ class TestYAMLGenerators:
         assert yaml1 != yaml2
         assert "1000.0" in yaml1
         assert "5000.0" in yaml2
+
+    def test_generate_notch_yaml_no_leading_newline(self):
+        """Test notch YAML does not start with a leading newline."""
+        yaml_output = generate_notch_yaml(1000.0)
+        assert not yaml_output.startswith("\n")
+        assert yaml_output.startswith("#")
+
+    def test_generate_simulator_yaml_no_leading_newline(self):
+        """Test simulator YAML does not start with a leading newline."""
+        yaml_output = generate_simulator_yaml(1000.0)
+        assert not yaml_output.startswith("\n")
+        assert yaml_output.startswith("#")
 
 
 # --- Argument Parser Tests ---
@@ -528,6 +560,15 @@ class TestUIFunctions:
 class TestStateManagement:
     """Test suite for application state management."""
 
+    # Keys that may be added during tests (for cleanup)
+    _test_keys = ["test_key", "new_key", "existing_key", "update_key"]
+
+    def teardown_method(self):
+        """Clean up any test keys added to state after each test."""
+        for key in self._test_keys:
+            if key in state:
+                state.pop(key)
+
     def test_initial_state_values(self):
         """Test initial state dictionary values."""
         # Note: state might be modified by other tests, so we check structure
@@ -558,6 +599,59 @@ class TestStateManagement:
         """Test ThreadSafeDict update method."""
         state.update({"update_key": "updated"})
         assert state["update_key"] == "updated"
+
+    def test_thread_safe_dict_contains(self):
+        """Test ThreadSafeDict __contains__ is thread-safe."""
+        state["test_key"] = "test_value"
+        assert "test_key" in state
+        assert "nonexistent" not in state
+
+    def test_thread_safe_dict_len(self):
+        """Test ThreadSafeDict __len__ is thread-safe."""
+        initial_len = len(state)
+        state["test_key"] = "test_value"
+        assert len(state) == initial_len + 1
+
+    def test_thread_safe_dict_iter(self):
+        """Test ThreadSafeDict __iter__ is thread-safe."""
+        keys = list(state)
+        assert "running" in keys
+        assert "mode" in keys
+
+    def test_thread_safe_dict_keys(self):
+        """Test ThreadSafeDict keys() is thread-safe."""
+        keys = state.keys()
+        assert "running" in keys
+        assert isinstance(keys, list)
+
+    def test_thread_safe_dict_values(self):
+        """Test ThreadSafeDict values() is thread-safe."""
+        values = state.values()
+        assert isinstance(values, list)
+
+    def test_thread_safe_dict_items(self):
+        """Test ThreadSafeDict items() is thread-safe."""
+        items = state.items()
+        assert isinstance(items, list)
+        assert any(key == "running" for key, _ in items)
+
+    def test_thread_safe_dict_pop(self):
+        """Test ThreadSafeDict pop() is thread-safe."""
+        state["test_key"] = "test_value"
+        value = state.pop("test_key")
+        assert value == "test_value"
+        assert "test_key" not in state
+
+    def test_thread_safe_dict_setdefault(self):
+        """Test ThreadSafeDict setdefault() is thread-safe."""
+        value = state.setdefault("test_key", "default_value")
+        assert value == "default_value"
+        assert state["test_key"] == "default_value"
+
+    def test_thread_safe_dict_unhashable(self):
+        """Test ThreadSafeDict is not hashable."""
+        with pytest.raises(TypeError):
+            hash(state)
 
 
 # --- Input Handler Tests ---

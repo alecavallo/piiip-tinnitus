@@ -176,6 +176,26 @@ class Oscillator:
         with self.lock:
             return self.volume
 
+    def set_is_playing(self, playing: bool):
+        """
+        Set the is_playing state in a thread-safe manner.
+
+        Args:
+            playing: True to start playing, False to stop.
+        """
+        with self.lock:
+            self.is_playing = playing
+
+    def get_is_playing(self) -> bool:
+        """
+        Get the is_playing state in a thread-safe manner.
+
+        Returns:
+            True if currently playing, False otherwise.
+        """
+        with self.lock:
+            return self.is_playing
+
 
 # --- STATE LOGIC ---
 
@@ -188,6 +208,9 @@ class ThreadSafeDict(dict):
     and main thread) do not race.
     """
 
+    # Explicitly mark as unhashable (mutable container)
+    __hash__ = None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._lock = threading.Lock()
@@ -199,10 +222,6 @@ class ThreadSafeDict(dict):
                 return dict.__eq__(self, other)
         return NotImplemented
 
-    def __hash__(self):
-        """ThreadSafeDict is not hashable (mutable container)."""
-        raise TypeError("unhashable type: 'ThreadSafeDict'")
-
     def __getitem__(self, key):
         with self._lock:
             return super().__getitem__(key)
@@ -211,6 +230,22 @@ class ThreadSafeDict(dict):
         with self._lock:
             return super().__setitem__(key, value)
 
+    def __delitem__(self, key):
+        with self._lock:
+            return super().__delitem__(key)
+
+    def __contains__(self, key):
+        with self._lock:
+            return super().__contains__(key)
+
+    def __len__(self):
+        with self._lock:
+            return super().__len__()
+
+    def __iter__(self):
+        with self._lock:
+            return iter(list(super().keys()))
+
     def get(self, key, default=None):
         with self._lock:
             return super().get(key, default)
@@ -218,6 +253,30 @@ class ThreadSafeDict(dict):
     def update(self, *args, **kwargs):
         with self._lock:
             return super().update(*args, **kwargs)
+
+    def keys(self):
+        with self._lock:
+            return list(super().keys())
+
+    def values(self):
+        with self._lock:
+            return list(super().values())
+
+    def items(self):
+        with self._lock:
+            return list(super().items())
+
+    def pop(self, key, *args):
+        with self._lock:
+            return super().pop(key, *args)
+
+    def setdefault(self, key, default=None):
+        with self._lock:
+            return super().setdefault(key, default)
+
+    def clear(self):
+        with self._lock:
+            return super().clear()
 
 
 osc = None  # Will be initialized in main() with optional frequency
@@ -264,7 +323,9 @@ pipeline:
     channels: [0, 1]
     names:
       - my_notch
-"""
+""".lstrip(
+        "\n"
+    )
 
 
 def generate_simulator_yaml(freq: float) -> str:
@@ -299,7 +360,9 @@ pipeline:
     channels: [0, 1]
     names:
       - tinnitus_sim
-"""
+""".lstrip(
+        "\n"
+    )
 
 
 # --- UI & UTILITIES ---
@@ -460,9 +523,28 @@ def main():
     global osc
     osc = Oscillator(initial_frequency=args.frequency)
 
-    stream = sd.OutputStream(channels=1, samplerate=SAMPLE_RATE, callback=osc.callback)
+    # Initialize audio stream with error handling
+    try:
+        stream = sd.OutputStream(
+            channels=1,
+            samplerate=SAMPLE_RATE,
+            callback=osc.callback,
+        )
+    except sd.PortAudioError as e:
+        print(
+            f"{Fore.RED}Error: Could not initialize audio output device: {e}",
+            file=sys.stderr,
+        )
+        return
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(
+            f"{Fore.RED}Unexpected error while initializing audio output: {e}",
+            file=sys.stderr,
+        )
+        return
+
     with stream:
-        osc.is_playing = True
+        osc.set_is_playing(True)
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
         print_interface()
